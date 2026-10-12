@@ -14,7 +14,7 @@
         refreshIntervalo: 10 * 60 * 1000,
         storageKey: 'sidineya_state',
         // ⚠️ TROQUE pela URL do seu projeto na Vercel (com a barra no final)
-        assetBase: 'https://SEU-PROJETO.vercel.app/',
+        assetBase: 'https://sidineya-vercel.vercel.app/',
         gateReavisoMs: 30 * 1000,
         filaUrl: 'https://equatorialenergia.service-now.com/incident_list.do?sysparm_query=assignment_group%3D4aef55d3dbe44050d36963901496195c%5EstateNOT%20IN6%2C7%2C8'
     };
@@ -652,8 +652,6 @@
         }, 2000);
     }
 
-    // O observer só roda onde o elemento existe (dashboard ServiceNow)
-    // O balão (Alt+4) funciona em TODAS as páginas do manifest via storage
     esperarElemento(CONFIG.checkSelector, monitorarElemento);
 
 })();
