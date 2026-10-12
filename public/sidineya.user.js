@@ -1,5 +1,4 @@
-// sidineya.user.js
-// SIDINEYA 2.4 — versão userscript (Tampermonkey) hospedada na Vercel
+// SIDINEYA 2.5 — versão userscript (Tampermonkey) hospedada na Vercel
 // Carregado via @require. As permissões @grant e @match ficam no cabeçalho do Tampermonkey.
 
 (function () {
@@ -11,13 +10,38 @@
         debounceSubida: 2000,
         debounceDescida: 4000,
         limiteRealtime: 3,
-        refreshIntervalo: 10 * 60 * 1000,
+        // Intervalos possíveis em minutos convertidos para ms (4, 7 e 9 minutos)
+        refreshOpcoesMinutos: [4, 7, 9],
         storageKey: 'sidineya_state',
         // ⚠️ TROQUE pela URL do seu projeto na Vercel (com a barra no final)
         assetBase: 'https://sidineya-vercel.vercel.app/',
         gateReavisoMs: 30 * 1000,
         filaUrl: 'https://equatorialenergia.service-now.com/incident_list.do?sysparm_query=assignment_group%3D4aef55d3dbe44050d36963901496195c%5EstateNOT%20IN6%2C7%2C8'
     };
+
+    // -----------------------------
+    // 🔓 DESBLOQUEADOR DE ÁUDIO (Autoplay)
+    // -----------------------------
+    function inicializarDesbloqueioAudio() {
+        const desbloquear = async () => {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+            const buffer = audioCtx.createBuffer(1, 1, 22050);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start(0);
+
+            console.log('[SIDINEYA] Áudio desbloqueado com sucesso!');
+            window.removeEventListener('click', desbloquear);
+            window.removeEventListener('keydown', desbloquear);
+        };
+
+        window.addEventListener('click', desbloquear, { once: true });
+        window.addEventListener('keydown', desbloquear, { once: true });
+    }
 
     // -----------------------------
     // 🎨 ESTILOS DO BALÃO
@@ -170,19 +194,19 @@
             }
             @keyframes sid-blink {
                 0%, 100% { opacity: 1; }
-                50%       { opacity: .35; }
+                50%      { opacity: .35; }
             }
             @keyframes sid-blink-fast {
                 0%, 100% { opacity: 1; }
-                50%       { opacity: .2; }
+                50%      { opacity: .2; }
             }
         `;
         document.head.appendChild(style);
+        inicializarDesbloqueioAudio();
     }
 
     // -----------------------------
     // 🔵 BALÃO FLUTUANTE
-    // FIX: lê valor do storage ao abrir — funciona em qualquer página
     // -----------------------------
 
     let balloon = null;
@@ -201,13 +225,11 @@
         return 'MONITORANDO';
     }
 
-    // FIX — lê o valor real do storage antes de renderizar
     async function mostrarBalao() {
         if (balloon) fecharBalao(true);
 
         injetarEstilos();
 
-        // Busca valor atualizado do storage (funciona em qualquer aba)
         const estado = await carregarEstado();
         const valorReal = estado && estado.chamados
             ? Object.keys(estado.chamados).length
@@ -279,7 +301,6 @@
         numEl.classList.add('sid-pulse');
     }
 
-    // Atalho Alt+4
     document.addEventListener('keydown', e => {
         if (e.altKey && e.key === '4') {
             e.preventDefault();
@@ -293,9 +314,6 @@
 
     let speechQueue = [];
     let isSpeaking = false;
-
-    // Áudio via Web Audio API: baixa o MP3 com GM_xmlhttpRequest (ignora CORS/CSP da página)
-    // e toca decodificado. Se falhar, tenta o <audio> normal como plano B.
     let audioCtx = null;
     const bufferCache = new Map();
 
@@ -326,8 +344,10 @@
     async function tocarAudio(caminho) {
         const url = CONFIG.assetBase + caminho;
         try {
-            const buffer = await obterBuffer(url);
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+            const buffer = await obterBuffer(url);
             const fonte = audioCtx.createBufferSource();
             fonte.buffer = buffer;
             fonte.connect(audioCtx.destination);
@@ -361,10 +381,6 @@
         setTimeout(processarFila, 2500);
     }
 
-    // -----------------------------
-    // 🔢 ÁUDIOS DE QUANTIDADES
-    // -----------------------------
-
     function tocarAudioQuantidade(n) {
         const mapa = {
             1:  "audio/quantidade/umchamadonafila.mp3",
@@ -380,10 +396,6 @@
         };
         tocarAudio(mapa[n] || "audio/quantidade/maisdedezchamadosnafila.mp3");
     }
-
-    // -----------------------------
-    // 🔊 ÁUDIOS BASE
-    // -----------------------------
 
     function audioChamadosAumentaram(qtd) {
         enfileirarFala("audio/base/novo_chamado.mp3");
@@ -492,21 +504,31 @@
     }
 
     // -----------------------------
-    // 🔄 REFRESH AUTOMÁTICO (fila = 0)
+    // 🔄 REFRESH ALEATÓRIO (fila = 0) [4, 7 ou 9 min]
     // -----------------------------
 
     let refreshTimer = null;
 
     function iniciarRefreshTimer() {
         cancelarRefreshTimer();
+        
+        // Escolhe randomicamente entre 4, 7 ou 9 minutos
+        const minutosAleatorios = CONFIG.refreshOpcoesMinutos[Math.floor(Math.random() * CONFIG.refreshOpcoesMinutos.length)];
+        const intervaloMs = minutosAleatorios * 60 * 1000;
+
+        console.log(`[SIDINEYA] Fila zerada. Recarregando a página em ${minutosAleatorios} minutos (${intervaloMs}ms).`);
+        
         refreshTimer = setTimeout(() => {
-            console.log("[SIDINEYA] Fila zerada por 10min — recarregando página.");
             location.reload();
-        }, CONFIG.refreshIntervalo);
+        }, intervaloMs);
     }
 
     function cancelarRefreshTimer() {
-        if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+        if (refreshTimer) { 
+            clearTimeout(refreshTimer); 
+            refreshTimer = null; 
+            console.log("[SIDINEYA] Fila > 0: Timer de recarregamento cancelado.");
+        }
     }
 
     // -----------------------------
@@ -559,13 +581,13 @@
                 }
             }
             audioChamadosAumentaram(novoValor);
-            cancelarRefreshTimer();
+            cancelarRefreshTimer(); // Fila subiu, cancela o refresh automático
 
         } else if (novoValor === 0) {
             destruirTodosChamados();
             audioFilaZerada();
             limparEstado();
-            iniciarRefreshTimer();
+            iniciarRefreshTimer(); // Fila zerou, agenda o refresh randômico (4, 7 ou 9 min)
 
         } else {
             const removidos = anterior - novoValor;
@@ -577,13 +599,13 @@
                 removerChamado(idsOrdenados[i]);
             }
             audioChamadosDiminuiram(novoValor);
+            cancelarRefreshTimer(); // Ainda tem chamados (>0), cancela qualquer refresh pendente
         }
 
         estadoRestaurado = false;
         valorAnterior    = novoValor;
         salvarEstado(snapshotChamados());
 
-        // Atualiza balão se visível
         atualizarBalao(novoValor);
     }
 
@@ -623,8 +645,12 @@
         }
 
         const valorInicial = getValorAtual();
+        valorAnterior = valorInicial; // Sincroniza o valor inicial real da tela
+
         if (valorInicial === 0 && chamadosAtivos.size === 0) {
             iniciarRefreshTimer();
+        } else {
+            cancelarRefreshTimer();
         }
 
         const observer = new MutationObserver(() => {
